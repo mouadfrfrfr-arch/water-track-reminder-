@@ -1,26 +1,101 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Water & Hydration palette (UI/UX Pro Max) */
+  --app-bg: #eaf6fc;
+  --surface: #ffffff;
+  --surface-2: #f0f9ff;
+  --ink: #0b2540;
+  --ink-muted: #5a7a93;
+  --primary: #0284c7;
+  --primary-2: #06b6d4;
+  --primary-3: #0891b2;
+  --primary-deep: #0c4a6e;
+  --accent: #38bdf8;
+  --accent-2: #7dd3fc;
+  --ring: rgba(2, 132, 199, 0.35);
+  --shadow-light: rgba(255, 255, 255, 0.9);
+  --shadow-dark: rgba(11, 37, 64, 0.14);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--app-bg);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-nunito);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  background: var(--app-bg);
+  color: var(--ink);
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Premium claymorphism utilities */
+.clay {
+  background: #ffffff;
+  border-radius: 28px;
+  box-shadow:
+    12px 14px 32px rgba(11, 37, 64, 0.12),
+    -10px -10px 28px rgba(255, 255, 255, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.clay-soft {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    8px 10px 24px rgba(11, 37, 64, 0.1),
+    -6px -6px 18px rgba(255, 255, 255, 0.85);
+}
+
+.clay-pressable {
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.clay-pressable:active {
+  transform: scale(0.96);
+}
+
+.gradient-water {
+  background: linear-gradient(135deg, #06b6d4 0%, #0284c7 60%, #0c4a6e 100%);
+}
+
+.gradient-sky {
+  background: linear-gradient(180deg, #e0f2fe 0%, #eaf6fc 100%);
+}
+
+.text-display {
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+/* Floating blobs */
+@keyframes drift-slow {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(20px, -16px) scale(1.06);
   }
 }
+.blob-drift {
+  animation: drift-slow 14s ease-in-out infinite;
+}
+.blob-drift-2 {
+  animation: drift-slow 18s ease-in-out infinite reverse;
+}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Hide scrollbar inside phone frame */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
 }
