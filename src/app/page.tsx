@@ -1,10 +1,10 @@
-import { AquaApp } from "@/components/AquaApp";
+import { HydraBlueApp } from "@/components/HydraBlueApp";
 import { PhoneFrame } from "@/components/PhoneFrame";
 
 export default function Home() {
   return (
     <PhoneFrame>
-      <AquaApp />
+      <HydraBlueApp />
     </PhoneFrame>
   );
 }

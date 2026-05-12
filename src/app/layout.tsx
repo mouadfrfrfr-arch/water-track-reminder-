@@ -15,13 +15,13 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Aqua — Water Track Reminder",
+  title: "HydraBlue — Smart Water Tracker",
   description:
-    "A premium mobile water tracker reminder with animated sloshing water cup.",
+    "A premium mobile water tracker with smart reminders and animated sloshing water.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0284C7",
+  themeColor: "#2563EB",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
