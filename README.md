@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Aqua — Water Track Reminder
 
-## Getting Started
+A premium mobile-first water tracker reminder built with **Next.js 16** +
+**framer-motion**. Tap the big plus button to add water — watch the cup squish,
+the surface slosh side-to-side, the waves breathe, and bubbles drift upward.
 
-First, run the development server:
+The design system was generated with the
+[ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+("Water & Hydration Reminder" → Claymorphism + refreshing blue palette).
+
+## Features
+
+- **Animated water cup** — two layered sine-wave surfaces, drifting bubbles,
+  glass refraction highlight, sloshing burst + cup squish on every add (SVG +
+  framer-motion `useMotionValue` / `useTransform`).
+- **Claymorphism + water-blue palette** — `#0284C7 / #06B6D4 / #0891B2` with
+  soft multi-layer shadows, Nunito display + DM Sans body.
+- **Mobile-first phone frame** — iOS-style bezel + notch on desktop, full-screen
+  on real mobile.
+- **Daily goal ring** + animated percent, today/streak stats, quick-add presets
+  (250 / 500 / 750 ml), reminder toggle, animated intake log with undo.
+
+## Stack
+
+- Next.js 16 (App Router, static export)
+- React 19
+- Tailwind CSS v4
+- framer-motion 12
+
+## Develop
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev   # http://localhost:3000
+npm run build # static export to ./out
+npm run lint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Deploy
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app is fully client-side and configured for static export
+(`output: "export"` in `next.config.ts`), so the contents of `./out` can be
+served from any static host.
