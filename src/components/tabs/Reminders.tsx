@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
+import type { ReminderConfig } from "@/lib/appEvents";
 import {
   BellIcon,
   CheckIcon,
@@ -13,14 +14,6 @@ import {
   WavesIcon,
   BarsIcon,
 } from "../icons";
-
-type ReminderConfig = {
-  enabled: boolean;
-  wakeTime: string; // "HH:MM"
-  sleepTime: string;
-  frequencyMin: number;
-  sound: string;
-};
 
 const FREQ_PRESETS = [30, 45, 60, 90, 120, 180];
 
@@ -151,6 +144,7 @@ export function Reminders({
               <button
                 key={s.id}
                 type="button"
+                aria-pressed={selected}
                 onClick={() => onChange({ ...config, sound: s.id })}
                 className={
                   "card pressable flex items-center gap-3 p-4 text-left transition " +
@@ -246,6 +240,7 @@ function Toggle({
     <button
       type="button"
       role="switch"
+      aria-label="Enable reminders"
       aria-checked={on}
       onClick={() => onChange(!on)}
       className={
@@ -272,4 +267,6 @@ function formatFreq(min: number): string {
   return `${(min / 60).toFixed(1)} hrs`;
 }
 
+// ReminderConfig is now declared in @/lib/appEvents and re-exported here for compat.
 export type { ReminderConfig };
+
