@@ -36,11 +36,14 @@ export function HydraBlueApp() {
     }
   }, [state.reminders]);
 
-  const intakeMl = state.entries.reduce((s, e) => s + e.ml, 0);
+  // Dashboard hero shows today's intake only; `state.entries` is the full
+  // persisted log. `computeStreak` already buckets by local day so we reuse
+  // its `todayMl` value rather than re-filtering.
+  const { streak, todayMl } = computeStreak(state.entries, state.goalMl);
+  const intakeMl = todayMl;
   const lastDrinkAt = state.entries.length
     ? Date.parse(state.entries[0].atIso)
     : null;
-  const { streak } = computeStreak(state.entries, state.goalMl);
 
   const addWater = useCallback(
     (preset: QuickAddPreset) => {
