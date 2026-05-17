@@ -2,11 +2,13 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dispatch, type ReminderConfig } from "@/lib/appEvents";
+import { dispatch, type ReminderConfig, type ReminderSlot } from "@/lib/appEvents";
 import { computeStreak } from "@/lib/streak";
+import { passedSlots, registerSw, requestNotificationPermission, scheduleNext30Days } from "@/lib/sw";
 import { useHydraStore } from "@/lib/useHydraStore";
 import { AppHeader } from "./AppHeader";
 import { Onboarding } from "./Onboarding";
+import { ReminderTakeover } from "./ReminderTakeover";
 import { TabBar, type TabKey } from "./TabBar";
 import { Dashboard, type QuickAddPreset } from "./tabs/Dashboard";
 import { History } from "./tabs/History";
@@ -68,6 +70,62 @@ export function HydraBlueApp() {
     setTab("dashboard");
   }, [addWater]);
 
+  // Register the service worker once the app is mounted. The SW is
+  // responsible for OS-level notifications when the page is closed; on iOS
+  // it's effectively a no-op for triggers, but we still register it so
+  // notificationclick can route back into the app.
+  useEffect(() => {
+    void registerSw();
+  }, []);
+
+  // Re-schedule reminders whenever the saved config changes, AND whenever
+  // the page returns to the foreground. The foreground reschedule is what
+  // keeps Chromium Android alive without a backend.
+  useEffect(() => {
+    if (!state.ready) return;
+    void scheduleNext30Days(state.reminders);
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        void scheduleNext30Days(state.reminders);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [state.ready, state.reminders]);
+
+  // Foreground tick: catch slots whose `atIso` passed while the app is
+  // open. This is the only path that works on Safari (no Notification
+  // Triggers there) and it also fires the in-app takeover on every
+  // platform once the user is looking at the app.
+  const lastTickRef = useRef<Date>(new Date());
+  useEffect(() => {
+    if (!state.ready) return;
+    const tick = () => {
+      const now = new Date();
+      const due = passedSlots(state.reminders, lastTickRef.current, now);
+      lastTickRef.current = now;
+      for (const slot of due) {
+        void dispatch({ type: "reminder/fire", slot });
+      }
+    };
+    const id = window.setInterval(tick, 15_000); // 15s is fine — cheap pure fn.
+    return () => window.clearInterval(id);
+  }, [state.ready, state.reminders]);
+
+  // SW → page bridge: notification click on a closed/background tab posts
+  // REMINDER_FIRED to whichever tab gets focused; treat it as a fire.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    const onMsg = (e: MessageEvent) => {
+      const data = e.data as { type?: string; slot?: ReminderSlot } | null;
+      if (data?.type === "REMINDER_FIRED" && data.slot) {
+        void dispatch({ type: "reminder/fire", slot: data.slot });
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+  }, []);
+
   // Don't render UI before IDB hydration finishes — avoids a flash of seed values.
   if (!state.ready) {
     return <div className="flex h-full flex-col" aria-busy="true" />;
@@ -116,12 +174,26 @@ export function HydraBlueApp() {
               <Reminders
                 config={reminderDraft}
                 onChange={setReminderDraft}
-                onSave={() =>
-                  void dispatch({
+                onSave={async () => {
+                  await dispatch({
                     type: "reminder/save",
                     config: reminderDraft,
-                  })
-                }
+                  });
+                  // Ask for permission opportunistically; the user can
+                  // always re-grant from the browser settings if denied.
+                  await requestNotificationPermission();
+                }}
+                onTestReminder={() => {
+                  const now = new Date();
+                  void dispatch({
+                    type: "reminder/fire",
+                    slot: {
+                      id: `test-${now.getTime()}`,
+                      atIso: now.toISOString(),
+                      label: "Test reminder — tap Add Water to log",
+                    },
+                  });
+                }}
               />
             )}
             {tab === "profile" && (
@@ -153,6 +225,16 @@ export function HydraBlueApp() {
       </main>
 
       <TabBar active={tab} onChange={setTab} />
+
+      <AnimatePresence>
+        {state.reminderQueue.current && (
+          <ReminderTakeover
+            queue={state.reminderQueue}
+            intakeMl={intakeMl}
+            goalMl={state.goalMl}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

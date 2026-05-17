@@ -25,9 +25,11 @@ import {
 import {
   dispatch,
   registerDispatcher,
+  EMPTY_REMINDER_QUEUE,
   type AppEvent,
   type Profile,
   type ReminderConfig,
+  type ReminderQueue,
 } from "./appEvents";
 
 const DEFAULT_GOAL_ML = 2500;
@@ -53,6 +55,7 @@ export type HydraState = {
   goalMl: number;
   profile: Profile;
   reminders: ReminderConfig;
+  reminderQueue: ReminderQueue;
   hasCompletedOnboarding: boolean;
 };
 
@@ -67,6 +70,7 @@ export function useHydraStore() {
     goalMl: DEFAULT_GOAL_ML,
     profile: DEFAULT_PROFILE,
     reminders: DEFAULT_REMINDERS,
+    reminderQueue: EMPTY_REMINDER_QUEUE,
     hasCompletedOnboarding: false,
   });
   const mounted = useRef(false);
@@ -78,12 +82,13 @@ export function useHydraStore() {
     (async () => {
       try {
         await getOrCreateDeviceId(); // ensure a per-device id exists
-        const [entries, goalMl, profile, reminders, onboarded] =
+        const [entries, goalMl, profile, reminders, reminderQueue, onboarded] =
           await Promise.all([
             entriesAll(),
             kvGet<number>("goal"),
             kvGet<Profile>("profile"),
             kvGet<ReminderConfig>("reminders"),
+            kvGet<ReminderQueue>("reminderQueue"),
             kvGet<boolean>("onboarded"),
           ]);
         if (cancelled) return;
@@ -93,6 +98,7 @@ export function useHydraStore() {
           goalMl: goalMl ?? DEFAULT_GOAL_ML,
           profile: profile ?? DEFAULT_PROFILE,
           reminders: reminders ?? DEFAULT_REMINDERS,
+          reminderQueue: reminderQueue ?? EMPTY_REMINDER_QUEUE,
           hasCompletedOnboarding: onboarded === true,
         });
       } catch {
@@ -119,12 +125,8 @@ export function useHydraStore() {
         };
         await entryAdd(entry);
         setState((s) => ({
-          ready: s.ready,
+          ...s,
           entries: [entry, ...s.entries],
-          goalMl: s.goalMl,
-          profile: s.profile,
-          reminders: s.reminders,
-          hasCompletedOnboarding: s.hasCompletedOnboarding,
         }));
         return;
       }
@@ -149,6 +151,78 @@ export function useHydraStore() {
       case "reminder/save": {
         await kvSet("reminders", event.config);
         setState((s) => ({ ...s, reminders: event.config }));
+        return;
+      }
+      case "reminder/fire": {
+        // Queue model: if nothing is showing, this becomes `current`; if
+        // another takeover is already open, append to `pending`. Slots are
+        // deduplicated by id so a re-dispatch (e.g. SW message + foreground
+        // tick both fire for the same id) is a no-op.
+        let next: ReminderQueue | null = null;
+        setState((s) => {
+          const inFlight =
+            s.reminderQueue.current?.id === event.slot.id ||
+            s.reminderQueue.pending.some((p) => p.id === event.slot.id);
+          if (inFlight) {
+            next = s.reminderQueue;
+            return s;
+          }
+          const q: ReminderQueue =
+            s.reminderQueue.current === null
+              ? { current: event.slot, pending: s.reminderQueue.pending }
+              : {
+                  current: s.reminderQueue.current,
+                  pending: [...s.reminderQueue.pending, event.slot],
+                };
+          next = q;
+          return { ...s, reminderQueue: q };
+        });
+        if (next) await kvSet("reminderQueue", next);
+        return;
+      }
+      case "reminder/dismiss": {
+        // Pop `current`; promote the next pending slot (if any) into
+        // `current`. Used by the takeover's X / "Add Water" CTA.
+        let next: ReminderQueue | null = null;
+        setState((s) => {
+          if (
+            !s.reminderQueue.current ||
+            s.reminderQueue.current.id !== event.slotId
+          ) {
+            return s;
+          }
+          const [head, ...rest] = s.reminderQueue.pending;
+          const q: ReminderQueue = {
+            current: head ?? null,
+            pending: rest,
+          };
+          next = q;
+          return { ...s, reminderQueue: q };
+        });
+        if (next) await kvSet("reminderQueue", next);
+        return;
+      }
+      case "reminder/skip": {
+        // Same shape as dismiss but emits a distinct event so analytics /
+        // future UI (e.g. snooze) can distinguish "I drank" vs "not now".
+        let next: ReminderQueue | null = null;
+        setState((s) => {
+          let q: ReminderQueue;
+          if (s.reminderQueue.current?.id === event.slotId) {
+            const [head, ...rest] = s.reminderQueue.pending;
+            q = { current: head ?? null, pending: rest };
+          } else {
+            q = {
+              current: s.reminderQueue.current,
+              pending: s.reminderQueue.pending.filter(
+                (p) => p.id !== event.slotId,
+              ),
+            };
+          }
+          next = q;
+          return { ...s, reminderQueue: q };
+        });
+        if (next) await kvSet("reminderQueue", next);
         return;
       }
       case "onboarding/complete": {
