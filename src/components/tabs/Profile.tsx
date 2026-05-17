@@ -1,7 +1,18 @@
 "use client";
 
+/**
+ * Profile tab — rewired in PR-A.
+ *  - No more hardcoded "Sarah Johnson / LVL 12 / 12.4L Logged".
+ *  - Name is editable (empty if user hasn't onboarded).
+ *  - Streak + total logged are computed from real entries.
+ *  - Daily Goal calculator persists weight/activity/climate via onProfileChange
+ *    and sets the goal via onGoalChange.
+ */
+
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { Entry } from "@/lib/db";
+import type { Profile as PersistedProfile } from "@/lib/appEvents";
 import {
   BottleIcon,
   CoffeeIcon,
@@ -18,50 +29,81 @@ type Activity = "Sedentary" | "Moderate" | "Active";
 type Climate = "Cold" | "Mild" | "Hot";
 
 export function Profile({
+  name,
   goalMl,
-  setGoalMl,
+  entries,
+  streakDays,
+  profile,
+  onRename,
+  onGoalChange,
+  onProfileChange,
 }: {
+  name: string;
   goalMl: number;
-  setGoalMl: (g: number) => void;
+  entries: Entry[];
+  streakDays: number;
+  profile: PersistedProfile;
+  onRename: (next: string) => void;
+  onGoalChange: (ml: number) => void;
+  onProfileChange: (
+    patch: Partial<{ weightKg: number; activity: Activity; climate: Climate }>,
+  ) => void;
 }) {
-  const [weight, setWeight] = useState(70);
-  const [activity, setActivity] = useState<Activity>("Sedentary");
-  const [climate, setClimate] = useState<Climate>("Mild");
+  // Seed the form from the persisted profile (set on first mount, then
+  // managed locally). Without this, hard-reloading after Calculate & Save
+  // showed inputs back at literal defaults (70 / Sedentary / Mild) even
+  // though the goal itself persisted correctly.
+  const [weight, setWeight] = useState(profile.weightKg);
+  const [activity, setActivity] = useState<Activity>(profile.activity);
+  const [climate, setClimate] = useState<Climate>(profile.climate);
   const [recommended, setRecommended] = useState<number>(goalMl);
+  const [nameDraft, setNameDraft] = useState(name);
+
+  const totalLoggedMl = useMemo(
+    () => entries.reduce((s, e) => s + e.ml, 0),
+    [entries],
+  );
 
   const calculate = () => {
-    // Simple heuristic: 35ml × kg, modified by activity & climate
     const activityMul =
       activity === "Active" ? 1.25 : activity === "Moderate" ? 1.12 : 1;
     const climateMul =
       climate === "Hot" ? 1.15 : climate === "Cold" ? 0.95 : 1;
     const ml = Math.round(((weight * 35) * activityMul * climateMul) / 50) * 50;
     setRecommended(ml);
-    setGoalMl(ml);
+    onGoalChange(ml);
+    onProfileChange({ weightKg: weight, activity, climate });
   };
+
+  const commitName = () => {
+    const trimmed = nameDraft.trim();
+    if (trimmed && trimmed !== name) onRename(trimmed);
+  };
+
+  const formatTotal = (ml: number) =>
+    ml >= 1000 ? `${(ml / 1000).toFixed(1)}L` : `${ml}ml`;
 
   return (
     <div className="flex flex-col gap-5 px-5 pb-28">
-      {/* User card */}
+      {/* Identity card — editable name + derived stats */}
       <section className="card flex flex-col items-center gap-3 p-6 text-center">
-        <div className="relative">
-          <UserAvatar />
-          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-[var(--teal-2)] px-2.5 py-0.5 text-[11px] font-bold text-white shadow-[0_2px_6px_rgba(15,28,46,0.18)]">
-            LVL 12
-          </span>
-        </div>
-        <h2 className="text-display mt-2 text-[22px] text-[var(--ink)]">
-          Sarah Johnson
-        </h2>
-        <p className="text-[13.5px] text-[var(--ink-muted)]">
-          Hydration Enthusiast • San Francisco, CA
-        </p>
+        <input
+          aria-label="Your name"
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+          placeholder="Add your name"
+          className="text-display w-full bg-transparent text-center text-[22px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-soft)]"
+        />
         <div className="mt-1 flex items-center gap-4 text-[13px]">
           <span className="inline-flex items-center gap-1 font-semibold text-[var(--primary-2)]">
-            <DropletIcon size={14} /> 15 Day Streak
+            <DropletIcon size={14} /> {streakDays} day streak
           </span>
           <span className="inline-flex items-center gap-1 font-semibold text-[var(--teal)]">
-            <SparklesIcon size={14} /> 12.4L Logged
+            <SparklesIcon size={14} /> {formatTotal(totalLoggedMl)} logged
           </span>
         </div>
       </section>
@@ -108,6 +150,7 @@ export function Profile({
               <button
                 key={a}
                 type="button"
+                aria-pressed={activity === a}
                 onClick={() => setActivity(a)}
                 className={
                   "flex-1 rounded-full py-2 text-[13px] font-semibold transition " +
@@ -183,7 +226,7 @@ export function Profile({
         </div>
       </section>
 
-      {/* Drink presets */}
+      {/* Drink presets (visual; PR-B turns these into Quick-Add overrides) */}
       <section className="grid grid-cols-2 gap-3">
         <DrinkCard Icon={GlassIcon} label="Glass" amount="250ml" />
         <DrinkCard Icon={BottleIcon} label="Bottle" amount="500ml" />
@@ -216,24 +259,24 @@ function ClimateOption({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className="flex flex-col items-center gap-1.5"
     >
       <span
-        className="grid h-10 w-10 place-items-center rounded-full transition"
-        style={{
-          background: active ? palette.bg : "transparent",
-          color: active ? palette.color : "var(--ink-soft)",
-          boxShadow: active
-            ? `0 0 0 2px ${palette.color} inset, 0 4px 12px -6px ${palette.color}55`
-            : "none",
-        }}
+        className={
+          "grid h-12 w-12 place-items-center rounded-2xl transition " +
+          (active ? "ring-2 ring-offset-2 ring-[var(--primary-2)]" : "")
+        }
+        style={{ background: palette.bg, color: palette.color }}
       >
-        <Icon size={20} />
+        <Icon size={22} />
       </span>
       <span
-        className="text-[12.5px] font-semibold"
-        style={{ color: active ? palette.color : "var(--ink-soft)" }}
+        className={
+          "text-[12px] font-semibold " +
+          (active ? "text-[var(--primary-2)]" : "text-[var(--ink-soft)]")
+        }
       >
         {label}
       </span>
@@ -244,44 +287,29 @@ function ClimateOption({
 function Connector({ active }: { active: boolean }) {
   return (
     <span
-      className="h-0.5 flex-1 rounded-full"
-      style={{ background: active ? "var(--primary-2)" : "var(--line)" }}
+      className="h-px flex-1"
+      style={{
+        background: active
+          ? "linear-gradient(90deg,#2563eb,#0ea480)"
+          : "var(--line)",
+      }}
     />
   );
 }
 
 function CupsRing({ cups }: { cups: number }) {
-  const size = 130;
-  const stroke = 10;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  // 75% filled — purely cosmetic
-  const dash = c * 0.78;
+  const items = Array.from({ length: Math.max(0, Math.min(12, cups)) });
   return (
-    <div className="relative grid place-items-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} stroke="#e2e8f0" strokeWidth={stroke} fill="none" />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          stroke="url(#cup-grad)"
-          strokeWidth={stroke}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${c - dash}`}
-        />
-        <defs>
-          <linearGradient id="cup-grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#22d3ee" />
-            <stop offset="100%" stopColor="#1d4ed8" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div className="absolute flex flex-col items-center text-[var(--primary-2)]">
-        <DropletIcon size={28} />
-        <span className="text-[13px] font-bold mt-0.5">{cups} Cups</span>
-      </div>
+    <div className="flex flex-wrap items-end justify-center gap-1.5">
+      {items.map((_, i) => (
+        <span
+          key={i}
+          className="grid h-7 w-5 place-items-end rounded-b-[6px] rounded-t-[2px] bg-[var(--app-bg-2)]"
+          aria-hidden="true"
+        >
+          <span className="h-4 w-full rounded-b-[6px] bg-gradient-to-b from-[#22d3ee] to-[#2563eb]" />
+        </span>
+      ))}
     </div>
   );
 }
@@ -301,27 +329,9 @@ function DrinkCard({
         <Icon size={22} />
       </span>
       <div>
-        <p className="text-display text-[15px]">{label}</p>
-        <p className="text-[12.5px] text-[var(--ink-muted)]">{amount}</p>
+        <p className="text-[14px] font-semibold text-[var(--ink)]">{label}</p>
+        <p className="text-[12px] text-[var(--ink-muted)]">{amount}</p>
       </div>
-    </div>
-  );
-}
-
-function UserAvatar() {
-  return (
-    <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-white shadow-[0_4px_16px_rgba(15,28,46,0.18)]">
-      <svg viewBox="0 0 80 80" width={80} height={80}>
-        <defs>
-          <linearGradient id="profileGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#cbd5e1" />
-            <stop offset="100%" stopColor="#94a3b8" />
-          </linearGradient>
-        </defs>
-        <rect width="80" height="80" fill="url(#profileGrad)" />
-        <circle cx="40" cy="32" r="12" fill="#e2e8f0" />
-        <path d="M10 80 C 18 56, 62 56, 70 80 Z" fill="#e2e8f0" />
-      </svg>
     </div>
   );
 }

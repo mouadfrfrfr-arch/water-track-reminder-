@@ -2,64 +2,58 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { dispatch, type ReminderConfig } from "@/lib/appEvents";
+import { computeStreak } from "@/lib/streak";
+import { useHydraStore } from "@/lib/useHydraStore";
 import { AppHeader } from "./AppHeader";
+import { Onboarding } from "./Onboarding";
 import { TabBar, type TabKey } from "./TabBar";
 import { Dashboard, type QuickAddPreset } from "./tabs/Dashboard";
 import { History } from "./tabs/History";
 import { Profile } from "./tabs/Profile";
-import { Reminders, type ReminderConfig } from "./tabs/Reminders";
-
-type IntakeEntry = {
-  id: string;
-  ml: number;
-  label: string;
-  at: number;
-};
-
-function genId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-const DEFAULT_GOAL_ML = 2500;
-const SEED_INTAKE_ML = 1200; // matches the design's "1.2L of 2.5L" hero
-const SEED_LAST_DRINK_MS = 45 * 60 * 1000; // 45m ago
+import { Reminders } from "./tabs/Reminders";
 
 export function HydraBlueApp() {
+  const { state } = useHydraStore();
   const [tab, setTab] = useState<TabKey>("dashboard");
-  const [goalMl, setGoalMl] = useState(DEFAULT_GOAL_ML);
-  const [entries, setEntries] = useState<IntakeEntry[]>(() => [
-    {
-      id: "seed",
-      ml: SEED_INTAKE_ML,
-      label: "Starter",
-      at: Date.now() - SEED_LAST_DRINK_MS,
-    },
-  ]);
+
+  // UI-only animation state (not persisted)
   const [sloshKey, setSloshKey] = useState(0);
   const [splash, setSplash] = useState<{ id: number; ml: number } | null>(null);
   const splashIdRef = useRef(0);
-  const [reminders, setReminders] = useState<ReminderConfig>({
-    enabled: true,
-    wakeTime: "07:00",
-    sleepTime: "22:30",
-    frequencyMin: 45,
-    sound: "pure_drop",
-  });
 
-  const intakeMl = entries.reduce((s, e) => s + e.ml, 0);
-  const lastDrinkAt = entries.length
-    ? entries.reduce((max, e) => (e.at > max ? e.at : max), 0)
+  // Reminders draft — the Save button persists this to the store
+  const [reminderDraft, setReminderDraft] = useState<ReminderConfig>(
+    state.reminders,
+  );
+  const lastSavedRemindersRef = useRef(state.reminders);
+  useEffect(() => {
+    // When the store finishes hydrating (or another path saves a new config),
+    // refresh the draft so the UI shows the persisted values.
+    if (state.reminders !== lastSavedRemindersRef.current) {
+      setReminderDraft(state.reminders);
+      lastSavedRemindersRef.current = state.reminders;
+    }
+  }, [state.reminders]);
+
+  // Dashboard hero shows today's intake only; `state.entries` is the full
+  // persisted log. `computeStreak` already buckets by local day so we reuse
+  // its `todayMl` value rather than re-filtering.
+  const { streak, todayMl } = computeStreak(state.entries, state.goalMl);
+  const intakeMl = todayMl;
+  const lastDrinkAt = state.entries.length
+    ? Date.parse(state.entries[0].atIso)
     : null;
 
-  const addWater = useCallback((preset: QuickAddPreset) => {
-    setEntries((prev) => [
-      { id: genId(), ml: preset.ml, label: preset.label, at: Date.now() },
-      ...prev,
-    ]);
-    setSloshKey((k) => k + 1);
-    splashIdRef.current += 1;
-    setSplash({ id: splashIdRef.current, ml: preset.ml });
-  }, []);
+  const addWater = useCallback(
+    (preset: QuickAddPreset) => {
+      void dispatch({ type: "intake/add", ml: preset.ml, label: preset.label });
+      setSloshKey((k) => k + 1);
+      splashIdRef.current += 1;
+      setSplash({ id: splashIdRef.current, ml: preset.ml });
+    },
+    [],
+  );
 
   // Auto-hide splash chip
   useEffect(() => {
@@ -68,16 +62,27 @@ export function HydraBlueApp() {
     return () => clearTimeout(t);
   }, [splash]);
 
-  // From the History tab "Log Water" CTA — adds 250ml and switches to dashboard
-  // so the user can see the slosh.
+  // History "Log Water" CTA — adds 250ml and switches to dashboard
   const logFromHistory = useCallback(() => {
     addWater({ ml: 250, label: "Glass", Icon: () => <span /> });
     setTab("dashboard");
   }, [addWater]);
 
+  // Don't render UI before IDB hydration finishes — avoids a flash of seed values.
+  if (!state.ready) {
+    return <div className="flex h-full flex-col" aria-busy="true" />;
+  }
+
+  // First-launch onboarding (name + goal). Persists then drops through to the app.
+  if (!state.hasCompletedOnboarding) {
+    return <Onboarding initialGoalMl={state.goalMl} />;
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <AppHeader />
+      <AppHeader
+        subtitle={state.profile.name ? `Hi, ${state.profile.name}` : undefined}
+      />
 
       <main className="no-scrollbar relative flex-1 overflow-y-auto">
         <AnimatePresence mode="wait" initial={false}>
@@ -91,31 +96,57 @@ export function HydraBlueApp() {
             {tab === "dashboard" && (
               <Dashboard
                 intakeMl={intakeMl}
-                goalMl={goalMl}
+                goalMl={state.goalMl}
                 sloshKey={sloshKey}
                 splash={splash}
                 lastDrinkAt={lastDrinkAt}
-                streakDays={5}
+                streakDays={streak}
                 onAdd={addWater}
               />
             )}
             {tab === "history" && (
               <History
-                entries={entries}
-                goalMl={goalMl}
-                streakDays={5}
+                entries={state.entries}
+                goalMl={state.goalMl}
+                streakDays={streak}
                 onLogWater={logFromHistory}
               />
             )}
             {tab === "reminders" && (
               <Reminders
-                config={reminders}
-                onChange={setReminders}
-                onSave={() => {}}
+                config={reminderDraft}
+                onChange={setReminderDraft}
+                onSave={() =>
+                  void dispatch({
+                    type: "reminder/save",
+                    config: reminderDraft,
+                  })
+                }
               />
             )}
             {tab === "profile" && (
-              <Profile goalMl={goalMl} setGoalMl={setGoalMl} />
+              <Profile
+                name={state.profile.name}
+                goalMl={state.goalMl}
+                entries={state.entries}
+                streakDays={streak}
+                profile={state.profile}
+                onRename={(next) =>
+                  void dispatch({
+                    type: "profile/save",
+                    profile: { ...state.profile, name: next },
+                  })
+                }
+                onGoalChange={(ml) =>
+                  void dispatch({ type: "goal/set", ml })
+                }
+                onProfileChange={(patch) =>
+                  void dispatch({
+                    type: "profile/save",
+                    profile: { ...state.profile, ...patch },
+                  })
+                }
+              />
             )}
           </motion.div>
         </AnimatePresence>
