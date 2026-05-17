@@ -130,6 +130,7 @@ export function HydraBlueApp() {
                 goalMl={state.goalMl}
                 entries={state.entries}
                 streakDays={streak}
+                profile={state.profile}
                 onRename={(next) =>
                   void dispatch({
                     type: "profile/save",

@@ -12,6 +12,7 @@
 import { motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import type { Entry } from "@/lib/db";
+import type { Profile as PersistedProfile } from "@/lib/appEvents";
 import {
   BottleIcon,
   CoffeeIcon,
@@ -32,6 +33,7 @@ export function Profile({
   goalMl,
   entries,
   streakDays,
+  profile,
   onRename,
   onGoalChange,
   onProfileChange,
@@ -40,15 +42,20 @@ export function Profile({
   goalMl: number;
   entries: Entry[];
   streakDays: number;
+  profile: PersistedProfile;
   onRename: (next: string) => void;
   onGoalChange: (ml: number) => void;
   onProfileChange: (
     patch: Partial<{ weightKg: number; activity: Activity; climate: Climate }>,
   ) => void;
 }) {
-  const [weight, setWeight] = useState(70);
-  const [activity, setActivity] = useState<Activity>("Sedentary");
-  const [climate, setClimate] = useState<Climate>("Mild");
+  // Seed the form from the persisted profile (set on first mount, then
+  // managed locally). Without this, hard-reloading after Calculate & Save
+  // showed inputs back at literal defaults (70 / Sedentary / Mild) even
+  // though the goal itself persisted correctly.
+  const [weight, setWeight] = useState(profile.weightKg);
+  const [activity, setActivity] = useState<Activity>(profile.activity);
+  const [climate, setClimate] = useState<Climate>(profile.climate);
   const [recommended, setRecommended] = useState<number>(goalMl);
   const [nameDraft, setNameDraft] = useState(name);
 
