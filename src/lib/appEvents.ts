@@ -11,6 +11,7 @@
  */
 
 import type { Entry } from "./db";
+import type { ReminderSlot } from "./reminderSlots";
 
 export type ReminderConfig = {
   enabled: boolean;
@@ -31,6 +32,13 @@ export type AppEvent =
   | { type: "intake/add"; ml: number; label: string }
   | { type: "intake/remove"; id: string }
   | { type: "reminder/save"; config: ReminderConfig }
+  // Reminder lifecycle — see ReminderTakeover + useHydraStore for queue logic.
+  // `reminder/fire` is dispatched both by the foreground scheduler (when a
+  // slot's atIso passes while the app is open) and by the SW message handler
+  // (when a notification is clicked from outside the app).
+  | { type: "reminder/fire"; slot: ReminderSlot }
+  | { type: "reminder/dismiss"; slotId: string }
+  | { type: "reminder/skip"; slotId: string }
   | { type: "profile/save"; profile: Profile }
   | { type: "goal/set"; ml: number }
   | { type: "onboarding/complete"; name: string; goalMl: number };
@@ -74,3 +82,19 @@ export async function dispatch(event: AppEvent): Promise<void> {
 
 // Re-export the seed shapes that consumers reach for via this barrel.
 export type { Entry };
+export type { ReminderSlot } from "./reminderSlots";
+
+/**
+ * Persisted queue of reminder slots. `current` is the one shown in the
+ * full-screen takeover; `pending` accumulates additional slots that fired
+ * while the takeover was already open (we never stack two overlays).
+ */
+export type ReminderQueue = {
+  current: ReminderSlot | null;
+  pending: ReminderSlot[];
+};
+
+export const EMPTY_REMINDER_QUEUE: ReminderQueue = {
+  current: null,
+  pending: [],
+};

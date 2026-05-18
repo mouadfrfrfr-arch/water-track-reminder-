@@ -22,7 +22,12 @@ const DB_VERSION = 1;
 const KV_STORE = "kv";
 const ENTRIES_STORE = "entries";
 
-const MIRROR_KEYS = new Set(["profile", "goal", "reminders"]);
+const MIRROR_KEYS = new Set([
+  "profile",
+  "goal",
+  "reminders",
+  "reminderQueue",
+]);
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

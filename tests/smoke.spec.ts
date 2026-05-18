@@ -139,6 +139,37 @@ for (const tab of TABS) {
   });
 }
 
+test("Send Test Reminder opens takeover; Add Water dismisses and logs intake", async ({
+  page,
+}) => {
+  await installHook(page);
+  await page.goto("/");
+  await completeOnboarding(page);
+
+  // Reminders tab → Send Test Reminder
+  await goToTab(page, "reminders");
+  await page
+    .getByRole("button", { name: /send test reminder/i })
+    .click();
+
+  // Takeover should be visible with its time + label
+  const takeover = page.getByTestId("reminder-takeover");
+  await expect(takeover).toBeVisible();
+  await expect(page.getByTestId("takeover-time")).toBeVisible();
+  await expect(page.getByTestId("takeover-label")).toBeVisible();
+
+  // Tap "Add Water (250ml)" — both logs intake and dismisses
+  await page.getByTestId("takeover-add").click();
+  await expect(takeover).toHaveCount(0);
+
+  // Dashboard should now show 0.3L (250ml → (0.25).toFixed(1) rounds to 0.3)
+  await page
+    .locator("nav")
+    .getByRole("button", { name: /^dashboard$/i })
+    .click();
+  await expect(page.getByText(/0\.3L/i).first()).toBeVisible();
+});
+
 test("bottom-nav tabs switch the active page", async ({ page }) => {
   await installHook(page);
   await page.goto("/");

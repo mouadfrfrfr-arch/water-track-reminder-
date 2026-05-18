@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { ReminderConfig } from "@/lib/appEvents";
+import { isIosLike } from "@/lib/sw";
 import {
   BellIcon,
   CheckIcon,
@@ -14,6 +15,9 @@ import {
   WavesIcon,
   BarsIcon,
 } from "../icons";
+
+const NOOP_SUBSCRIBE = () => () => {};
+const SSR_NOT_IOS = () => false;
 
 const FREQ_PRESETS = [30, 45, 60, 90, 120, 180];
 
@@ -45,11 +49,22 @@ export function Reminders({
   config,
   onChange,
   onSave,
+  onTestReminder,
 }: {
   config: ReminderConfig;
   onChange: (next: ReminderConfig) => void;
   onSave: () => void;
+  onTestReminder: () => void;
 }) {
+  // UA banner is shown only on iOS / iPadOS-like Safari since Notification
+  // Triggers aren't available there. `useSyncExternalStore` is the React
+  // 19 idiomatic way to read a non-React value without tripping the
+  // "setState in effect" lint rule — third arg is the SSR snapshot.
+  const showIosBanner = useSyncExternalStore(
+    NOOP_SUBSCRIBE,
+    isIosLike,
+    SSR_NOT_IOS,
+  );
   const freqIndex = Math.max(
     0,
     FREQ_PRESETS.findIndex((f) => f >= config.frequencyMin),
@@ -182,18 +197,43 @@ export function Reminders({
         </div>
       </section>
 
-      {/* Save button */}
-      <button
-        type="button"
-        onClick={() => {
-          onSave();
-          setSavedFlash(true);
-          setTimeout(() => setSavedFlash(false), 1400);
-        }}
-        className="gradient-cta pressable inline-flex h-13 items-center justify-center rounded-2xl py-3.5 text-[16px] font-semibold text-white shadow-[0_12px_28px_-14px_rgba(15,28,46,0.45)]"
-      >
-        {savedFlash ? "Saved!" : "Save Settings"}
-      </button>
+      {/* iOS reality banner — honest disclosure of the platform limit */}
+      {showIosBanner && (
+        <section
+          role="note"
+          className="rounded-2xl border border-[#F0C36E] bg-[#FFF8E6] p-4 text-[13.5px] text-[#7A4A0A]"
+        >
+          <p className="font-semibold">Heads-up for iPhone users</p>
+          <p className="mt-1">
+            iOS Safari can’t fire scheduled reminders when the app is closed.
+            Open HydraBlue once a day and reminders inside the app will work
+            reliably. For guaranteed background alerts, install the upcoming
+            native build.
+          </p>
+        </section>
+      )}
+
+      {/* Save + Test Reminder buttons */}
+      <div className="flex flex-col gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            onSave();
+            setSavedFlash(true);
+            setTimeout(() => setSavedFlash(false), 1400);
+          }}
+          className="gradient-cta pressable inline-flex h-13 items-center justify-center rounded-2xl py-3.5 text-[16px] font-semibold text-white shadow-[0_12px_28px_-14px_rgba(15,28,46,0.45)]"
+        >
+          {savedFlash ? "Saved!" : "Save Settings"}
+        </button>
+        <button
+          type="button"
+          onClick={onTestReminder}
+          className="pressable inline-flex h-12 items-center justify-center rounded-2xl border border-[var(--line)] bg-white py-3 text-[15px] font-semibold text-[var(--primary-2)]"
+        >
+          Send Test Reminder
+        </button>
+      </div>
     </div>
   );
 }
