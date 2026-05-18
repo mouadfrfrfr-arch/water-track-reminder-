@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Monochrome white droplet for the Android status-bar notification icon.
+  Android requires status-bar icons be a single-colour silhouette; the
+  tint is supplied by `iconColor: "#2563EB"` in capacitor.config.ts.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M12,2.5 C12,2.5 5,10.5 5,15.2 A7,7 0 0 0 19,15.2 C19,10.5 12,2.5 12,2.5 Z" />
+</vector>

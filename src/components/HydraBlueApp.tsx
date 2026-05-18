@@ -3,6 +3,13 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dispatch, type ReminderConfig, type ReminderSlot } from "@/lib/appEvents";
+import {
+  attachListeners as attachNativeListeners,
+  ensurePermission as ensureNativePermission,
+  registerActionTypes as registerNativeActionTypes,
+  scheduleNative,
+} from "@/lib/nativeNotifications";
+import { isNative } from "@/lib/platform";
 import { computeStreak } from "@/lib/streak";
 import { passedSlots, registerSw, requestNotificationPermission, scheduleNext30Days } from "@/lib/sw";
 import { useHydraStore } from "@/lib/useHydraStore";
@@ -70,23 +77,41 @@ export function HydraBlueApp() {
     setTab("dashboard");
   }, [addWater]);
 
-  // Register the service worker once the app is mounted. The SW is
-  // responsible for OS-level notifications when the page is closed; on iOS
-  // it's effectively a no-op for triggers, but we still register it so
+  // On native (Capacitor) we use LocalNotifications + AlarmManager; the
+  // service worker isn't needed there. On the web we register the SW so
   // notificationclick can route back into the app.
   useEffect(() => {
+    if (isNative()) {
+      void registerNativeActionTypes();
+      return attachNativeListeners((slot, actionId) => {
+        if (actionId === "ADD_WATER") {
+          // Logging from the notification itself: log intake + clear the
+          // slot from the queue without opening the takeover.
+          void dispatch({ type: "intake/add", ml: 250, label: "250ml" });
+          void dispatch({ type: "reminder/dismiss", slotId: slot.id });
+        } else {
+          // Bare tap (or foreground delivery): open the takeover.
+          void dispatch({ type: "reminder/fire", slot });
+        }
+      });
+    }
     void registerSw();
   }, []);
 
   // Re-schedule reminders whenever the saved config changes, AND whenever
-  // the page returns to the foreground. The foreground reschedule is what
-  // keeps Chromium Android alive without a backend.
+  // the page returns to the foreground. On native this hands off to
+  // AlarmManager via LocalNotifications; on web it schedules
+  // TimestampTrigger notifications in the SW.
   useEffect(() => {
     if (!state.ready) return;
-    void scheduleNext30Days(state.reminders);
+    const reschedule = () =>
+      isNative()
+        ? scheduleNative(state.reminders)
+        : scheduleNext30Days(state.reminders);
+    void reschedule();
     const onVis = () => {
       if (document.visibilityState === "visible") {
-        void scheduleNext30Days(state.reminders);
+        void reschedule();
       }
     };
     document.addEventListener("visibilitychange", onVis);
@@ -181,7 +206,13 @@ export function HydraBlueApp() {
                   });
                   // Ask for permission opportunistically; the user can
                   // always re-grant from the browser settings if denied.
-                  await requestNotificationPermission();
+                  // Native goes through LocalNotifications.requestPermissions,
+                  // web goes through Notification.requestPermission.
+                  if (isNative()) {
+                    await ensureNativePermission();
+                  } else {
+                    await requestNotificationPermission();
+                  }
                 }}
                 onTestReminder={() => {
                   const now = new Date();

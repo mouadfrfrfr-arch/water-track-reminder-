@@ -22,6 +22,8 @@ const eslintConfig = defineConfig([
     "tools/**",
     "playwright-report/**",
     "test-results/**",
+    // Capacitor-generated native project + the asset copy of `out/`.
+    "android/**",
   ]),
 ]);
 
