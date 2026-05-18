@@ -26,12 +26,13 @@ self.addEventListener("activate", (event) => {
 
 async function clearPendingHbNotifications() {
   // Drop any previously-scheduled HydraBlue notifications so we don't
-  // double-fire after a reschedule. Triggers don't expose a public list, but
-  // `getNotifications({ includeTriggered: false })` returns pending ones in
-  // Chromium today.
+  // double-fire after a reschedule. `includeTriggered: true` is what
+  // returns the scheduled-but-not-yet-fired set in Chromium — the default
+  // `false` only returns notifications already visible in the tray, which
+  // would silently skip the ones we actually want to cancel.
   try {
     const pending = await self.registration.getNotifications({
-      includeTriggered: false,
+      includeTriggered: true,
     });
     for (const n of pending) {
       if (n.tag && n.tag.startsWith(NOTIF_TAG_PREFIX)) n.close();
