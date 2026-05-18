@@ -12,6 +12,7 @@
 
 import type { Entry } from "./db";
 import type { ReminderSlot } from "./reminderSlots";
+import type { BackupV2Data } from "./backup";
 
 export type ReminderConfig = {
   enabled: boolean;
@@ -41,7 +42,25 @@ export type AppEvent =
   | { type: "reminder/skip"; slotId: string }
   | { type: "profile/save"; profile: Profile }
   | { type: "goal/set"; ml: number }
-  | { type: "onboarding/complete"; name: string; goalMl: number };
+  | { type: "onboarding/complete"; name: string; goalMl: number }
+  // Security lifecycle. `pin/set` enables encryption-at-rest and seeds the
+  // session key; `pin/unlock` derives the key from the entered PIN +
+  // persisted salt; `pin/clear` reverses encryption back to plain.
+  | { type: "pin/set"; pin: string }
+  | { type: "pin/clear" }
+  | { type: "pin/unlock"; pin: string }
+  // Backup lifecycle. `backup/export` reads the live snapshot and triggers
+  // a JSON download; `backup/import` replaces store state with the parsed
+  // BackupV2 payload (called by Profile's <input type="file"> handler).
+  | { type: "backup/export" }
+  | { type: "backup/import"; data: BackupV2Data }
+  | { type: "data/reset" }
+  // Pure UI acknowledgement. Dispatched by buttons that only toggle
+  // local UI state (e.g. opening a confirmation stage, canceling out
+  // of a sub-form) so the dispatcher contract — and the Playwright
+  // smoke test that asserts it — sees every visible button funnel
+  // through the same event router. The store ignores this event.
+  | { type: "ui/ack"; intent: string };
 
 export type AppEventHandler = (event: AppEvent) => Promise<void> | void;
 

@@ -8,6 +8,7 @@ import { passedSlots, registerSw, requestNotificationPermission, scheduleNext30D
 import { useHydraStore } from "@/lib/useHydraStore";
 import { AppHeader } from "./AppHeader";
 import { Onboarding } from "./Onboarding";
+import { PinLock } from "./PinLock";
 import { ReminderTakeover } from "./ReminderTakeover";
 import { TabBar, type TabKey } from "./TabBar";
 import { Dashboard, type QuickAddPreset } from "./tabs/Dashboard";
@@ -131,6 +132,21 @@ export function HydraBlueApp() {
     return <div className="flex h-full flex-col" aria-busy="true" />;
   }
 
+  // Lock screen: PIN is enabled but the user hasn't entered it yet. Render
+  // the lock above everything (no chrome, no tabs) so there's no way to
+  // peek at data underneath.
+  if (state.locked) {
+    return (
+      <PinLock
+        attemptsLeft={state.pinAttemptsLeft}
+        maxAttempts={3}
+        lockoutUntilIso={state.lockoutUntilIso}
+        onSubmit={(pin) => void dispatch({ type: "pin/unlock", pin })}
+        onReset={() => void dispatch({ type: "data/reset" })}
+      />
+    );
+  }
+
   // First-launch onboarding (name + goal). Persists then drops through to the app.
   if (!state.hasCompletedOnboarding) {
     return <Onboarding initialGoalMl={state.goalMl} />;
@@ -203,6 +219,7 @@ export function HydraBlueApp() {
                 entries={state.entries}
                 streakDays={streak}
                 profile={state.profile}
+                pinEnabled={state.pinEnabled}
                 onRename={(next) =>
                   void dispatch({
                     type: "profile/save",
@@ -218,6 +235,17 @@ export function HydraBlueApp() {
                     profile: { ...state.profile, ...patch },
                   })
                 }
+                onPinSet={(pin) =>
+                  void dispatch({ type: "pin/set", pin })
+                }
+                onPinClear={() => void dispatch({ type: "pin/clear" })}
+                onBackupExport={() =>
+                  void dispatch({ type: "backup/export" })
+                }
+                onBackupImport={(data) =>
+                  void dispatch({ type: "backup/import", data })
+                }
+                onDataReset={() => void dispatch({ type: "data/reset" })}
               />
             )}
           </motion.div>

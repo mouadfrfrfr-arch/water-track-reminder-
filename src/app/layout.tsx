@@ -26,6 +26,27 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "HydraBlue",
   },
+  // Security-related meta tags. Static export rules out HTTP response
+  // headers (HSTS, X-Frame-Options), so this is the strongest variant
+  // available to us. The CSP is intentionally tight: same-origin only
+  // for scripts, fonts come from Google Fonts (next/font), images may
+  // be base64 data URIs (icons), and we ban every other origin.
+  other: {
+    "Content-Security-Policy":
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data: blob:",
+        "connect-src 'self'",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+      ].join("; "),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+  },
 };
 
 export const viewport: Viewport = {

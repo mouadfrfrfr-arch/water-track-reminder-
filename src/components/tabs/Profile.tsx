@@ -10,9 +10,12 @@
  */
 
 import { motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Entry } from "@/lib/db";
+import { dispatch } from "@/lib/appEvents";
 import type { Profile as PersistedProfile } from "@/lib/appEvents";
+import { isValidPin } from "@/lib/pin";
+import { readBackupFile } from "@/lib/backup";
 import {
   BottleIcon,
   CoffeeIcon,
@@ -34,20 +37,32 @@ export function Profile({
   entries,
   streakDays,
   profile,
+  pinEnabled,
   onRename,
   onGoalChange,
   onProfileChange,
+  onPinSet,
+  onPinClear,
+  onBackupExport,
+  onBackupImport,
+  onDataReset,
 }: {
   name: string;
   goalMl: number;
   entries: Entry[];
   streakDays: number;
   profile: PersistedProfile;
+  pinEnabled: boolean;
   onRename: (next: string) => void;
   onGoalChange: (ml: number) => void;
   onProfileChange: (
     patch: Partial<{ weightKg: number; activity: Activity; climate: Climate }>,
   ) => void;
+  onPinSet: (pin: string) => void;
+  onPinClear: () => void;
+  onBackupExport: () => void;
+  onBackupImport: (data: import("@/lib/backup").BackupV2Data) => void;
+  onDataReset: () => void;
 }) {
   // Seed the form from the persisted profile (set on first mount, then
   // managed locally). Without this, hard-reloading after Calculate & Save
@@ -233,6 +248,322 @@ export function Profile({
         <DrinkCard Icon={SportBottleIcon} label="Sport" amount="750ml" />
         <DrinkCard Icon={CoffeeIcon} label="Coffee" amount="330ml" />
       </section>
+
+      <SettingsSection
+        pinEnabled={pinEnabled}
+        onPinSet={onPinSet}
+        onPinClear={onPinClear}
+        onBackupExport={onBackupExport}
+        onBackupImport={onBackupImport}
+        onDataReset={onDataReset}
+      />
+    </div>
+  );
+}
+
+function SettingsSection({
+  pinEnabled,
+  onPinSet,
+  onPinClear,
+  onBackupExport,
+  onBackupImport,
+  onDataReset,
+}: {
+  pinEnabled: boolean;
+  onPinSet: (pin: string) => void;
+  onPinClear: () => void;
+  onBackupExport: () => void;
+  onBackupImport: (data: import("@/lib/backup").BackupV2Data) => void;
+  onDataReset: () => void;
+}) {
+  type Stage =
+    | "idle"
+    | "setting-pin"
+    | "confirm-clear-pin"
+    | "confirm-reset"
+    | "importing";
+  const [stage, setStage] = useState<Stage>("idle");
+  const [pinDraft, setPinDraft] = useState("");
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const submitPin = () => {
+    if (!isValidPin(pinDraft)) return;
+    onPinSet(pinDraft);
+    setPinDraft("");
+    setStage("idle");
+  };
+
+  const openFile = () => {
+    setImportMsg(null);
+    fileRef.current?.click();
+  };
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    setStage("importing");
+    const result = await readBackupFile(file);
+    if (!result.ok) {
+      setImportMsg(result.error);
+      setStage("idle");
+      return;
+    }
+    onBackupImport(result.backup.data);
+    setImportMsg(
+      `Imported \u2022 ${result.backup.data.entries.length} entries restored from backup v${result.backup.version}.`,
+    );
+    setStage("idle");
+  };
+
+  return (
+    <section
+      aria-labelledby="settings-heading"
+      className="card flex flex-col gap-4 p-5"
+    >
+      <header className="flex items-center justify-between">
+        <h3
+          id="settings-heading"
+          className="text-display text-[22px] text-[var(--ink)]"
+        >
+          Settings
+        </h3>
+        <span className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-[var(--primary-2)]">
+          Security &amp; Backup
+        </span>
+      </header>
+
+      {/* PIN row */}
+      <SettingsRow
+        label="App PIN"
+        sub={
+          pinEnabled
+            ? "On — data on this device is encrypted with your PIN."
+            : "Off — turn on to encrypt this device's data with a 4-digit PIN."
+        }
+      >
+        {pinEnabled ? (
+          <button
+            type="button"
+            aria-expanded={stage === "confirm-clear-pin"}
+            onClick={() => {
+              setStage("confirm-clear-pin");
+              void dispatch({ type: "ui/ack", intent: "open-clear-pin" });
+            }}
+            className="rounded-full bg-[var(--line)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)]"
+          >
+            Disable
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-expanded={stage === "setting-pin"}
+            onClick={() => {
+              setStage("setting-pin");
+              void dispatch({ type: "ui/ack", intent: "open-set-pin" });
+            }}
+            className="rounded-full bg-[var(--primary-2)] px-4 py-2 text-[13px] font-semibold text-white"
+          >
+            Set 4-digit PIN
+          </button>
+        )}
+      </SettingsRow>
+
+      {stage === "setting-pin" && (
+        <div className="flex flex-col gap-2 rounded-2xl bg-[var(--app-bg-2)] p-3">
+          <label
+            htmlFor="pin-draft"
+            className="text-[12px] font-semibold text-[var(--ink-muted)]"
+          >
+            Choose a 4-digit PIN
+          </label>
+          <input
+            id="pin-draft"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={4}
+            value={pinDraft}
+            onChange={(e) =>
+              setPinDraft(e.target.value.replace(/\D/g, "").slice(0, 4))
+            }
+            placeholder="\u2022\u2022\u2022\u2022"
+            className="text-display rounded-xl bg-white px-4 py-3 text-center text-[24px] tracking-[0.5em] text-[var(--ink)] outline-none"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setPinDraft("");
+                setStage("idle");
+                void dispatch({ type: "ui/ack", intent: "cancel-set-pin" });
+              }}
+              className="rounded-full bg-[var(--line)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!isValidPin(pinDraft)}
+              onClick={submitPin}
+              className="rounded-full bg-[var(--primary-2)] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+            >
+              Enable PIN
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === "confirm-clear-pin" && (
+        <ConfirmBlock
+          tone="warn"
+          message="Disable PIN? Data on this device will be decrypted back to plain storage."
+          confirmLabel="Disable PIN"
+          onCancel={() => setStage("idle")}
+          onConfirm={() => {
+            onPinClear();
+            setStage("idle");
+          }}
+        />
+      )}
+
+      {/* Backup row */}
+      <SettingsRow
+        label="Backup"
+        sub="Export everything as a JSON file you can keep safe, or restore from a previous backup."
+      >
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onBackupExport}
+            className="rounded-full bg-[var(--primary-2)] px-4 py-2 text-[13px] font-semibold text-white"
+          >
+            Export to file
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              openFile();
+              void dispatch({ type: "ui/ack", intent: "open-file-picker" });
+            }}
+            className="rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-[var(--primary-2)] shadow-[0_2px_8px_rgba(15,28,46,0.06)]"
+          >
+            Import from file
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json"
+            hidden
+            onChange={onFileChange}
+            aria-hidden="true"
+          />
+        </div>
+      </SettingsRow>
+
+      {importMsg && (
+        <p
+          role="status"
+          className="rounded-xl bg-[var(--app-bg-2)] px-3 py-2 text-[12px] text-[var(--ink-muted)]"
+        >
+          {importMsg}
+        </p>
+      )}
+
+      {/* Reset row */}
+      <SettingsRow
+        label="Reset all data"
+        sub="Wipe every entry, profile, and reminder from this device."
+      >
+        <button
+          type="button"
+          aria-expanded={stage === "confirm-reset"}
+          onClick={() => {
+            setStage("confirm-reset");
+            void dispatch({ type: "ui/ack", intent: "open-reset" });
+          }}
+          className="rounded-full bg-[#dc2626] px-4 py-2 text-[13px] font-semibold text-white"
+        >
+          Reset
+        </button>
+      </SettingsRow>
+
+      {stage === "confirm-reset" && (
+        <ConfirmBlock
+          tone="danger"
+          message="Wipe every entry, profile, reminder, and PIN on this device? There is no recovery."
+          confirmLabel="Yes, wipe everything"
+          onCancel={() => setStage("idle")}
+          onConfirm={() => {
+            onDataReset();
+            // App reloads from data/reset; no need to clear stage.
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+function SettingsRow({
+  label,
+  sub,
+  children,
+}: {
+  label: string;
+  sub: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-1 flex-col gap-0.5">
+        <span className="text-[14px] font-semibold text-[var(--ink)]">
+          {label}
+        </span>
+        <span className="text-[12px] leading-snug text-[var(--ink-muted)]">
+          {sub}
+        </span>
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function ConfirmBlock({
+  tone,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  tone: "warn" | "danger";
+  message: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const confirmBg = tone === "danger" ? "bg-[#dc2626]" : "bg-[var(--primary-2)]";
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-[var(--app-bg-2)] p-3">
+      <p className="text-[13px] text-[var(--ink)]">{message}</p>
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            onCancel();
+            void dispatch({ type: "ui/ack", intent: "cancel-confirm" });
+          }}
+          className="rounded-full bg-[var(--line)] px-4 py-2 text-[13px] font-semibold text-[var(--ink)]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className={`rounded-full ${confirmBg} px-4 py-2 text-[13px] font-semibold text-white`}
+        >
+          {confirmLabel}
+        </button>
+      </div>
     </div>
   );
 }

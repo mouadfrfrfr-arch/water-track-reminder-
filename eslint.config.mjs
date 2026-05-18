@@ -22,6 +22,9 @@ const eslintConfig = defineConfig([
     "tools/**",
     "playwright-report/**",
     "test-results/**",
+    // Android Capacitor scaffold — Gradle-built assets and the
+    // bridge JS are not our source.
+    "android/**",
   ]),
 ]);
 

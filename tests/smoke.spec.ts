@@ -170,6 +170,108 @@ test("Send Test Reminder opens takeover; Add Water dismisses and logs intake", a
   await expect(page.getByText(/0\.3L/i).first()).toBeVisible();
 });
 
+test("PIN: set 1234 \u2192 reload \u2192 lock screen \u2192 wrong PIN errors \u2192 correct PIN unlocks", async ({
+  page,
+}) => {
+  await installHook(page);
+  await page.goto("/");
+  await completeOnboarding(page);
+  await goToTab(page, "profile");
+
+  // Enable PIN
+  await page.getByRole("button", { name: /set 4-digit pin/i }).click();
+  await page.getByLabel(/choose a 4-digit pin/i).fill("1234");
+  await page.getByRole("button", { name: /^enable pin$/i }).click();
+
+  // pin/set runs PBKDF2 (100k iter) + re-encrypts every IDB row, so the
+  // toggle flipping to "Disable" is our signal that the write completed.
+  // Without this wait the reload races the IDB transaction.
+  await expect(page.getByRole("button", { name: /^disable$/i })).toBeVisible({
+    timeout: 10000,
+  });
+
+  // Hard reload — lock screen should appear.
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: /enter pin/i })).toBeVisible({
+    timeout: 8000,
+  });
+
+  // Wrong PIN: 9999 \u2192 error message, attempts decremented.
+  for (const d of "9999") {
+    await page.getByRole("button", { name: new RegExp(`^${d}$`) }).click();
+  }
+  await expect(page.getByText(/wrong pin/i)).toBeVisible({ timeout: 4000 });
+
+  // Correct PIN: 1234 \u2192 unlock, dashboard chrome appears.
+  for (const d of "1234") {
+    await page.getByRole("button", { name: new RegExp(`^${d}$`) }).click();
+  }
+  await expect(page.getByRole("dialog", { name: /enter pin/i })).toHaveCount(0, {
+    timeout: 8000,
+  });
+  await page.waitForSelector("main", { timeout: 5000 });
+});
+
+test("Backup roundtrip: export \u2192 reset \u2192 import restores entries + profile", async ({
+  page,
+}) => {
+  await installHook(page);
+  await page.goto("/");
+  await completeOnboarding(page);
+
+  // Log a 500ml entry so the backup has something distinctive.
+  await page
+    .locator("main")
+    .getByRole("button", { name: /^500ml$/i })
+    .first()
+    .click();
+  await page.waitForTimeout(100);
+
+  // Export to file: capture the download payload as JSON text.
+  await goToTab(page, "profile");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: /export to file/i }).click(),
+  ]);
+  const downloadPath = await download.path();
+  const fs = await import("fs/promises");
+  const json = await fs.readFile(downloadPath, "utf-8");
+  const parsed = JSON.parse(json) as {
+    version: number;
+    data: { entries: Array<{ ml: number }> };
+  };
+  expect(parsed.version).toBe(2);
+  expect(parsed.data.entries.length).toBeGreaterThan(0);
+
+  // Reset all data \u2192 onboarding should reappear after the auto-reload.
+  await page.getByRole("button", { name: /^reset$/i }).click();
+  await page.getByRole("button", { name: /yes, wipe everything/i }).click();
+  await page.waitForSelector("input[aria-label='Your name']", { timeout: 8000 });
+
+  // Re-onboard with a different name so import-vs-onboarding is visible.
+  await completeOnboarding(page);
+
+  // Import the captured backup. The hidden file input is non-visible; we
+  // set its files programmatically and dispatch a change event.
+  await goToTab(page, "profile");
+  const fileInput = page.locator("input[type='file']");
+  await fileInput.setInputFiles({
+    name: "hydrablue-backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(json),
+  });
+
+  // Status message confirms the import worked.
+  await expect(page.getByText(/imported/i)).toBeVisible({ timeout: 5000 });
+
+  // Dashboard should show the restored intake (\u2265 500ml \u2192 0.5L+).
+  await page
+    .locator("nav")
+    .getByRole("button", { name: /^dashboard$/i })
+    .click();
+  await expect(page.getByText(/0\.[5-9]L|[1-9]\.[0-9]+L/).first()).toBeVisible();
+});
+
 test("bottom-nav tabs switch the active page", async ({ page }) => {
   await installHook(page);
   await page.goto("/");
