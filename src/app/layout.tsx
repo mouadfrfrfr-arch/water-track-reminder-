@@ -18,6 +18,14 @@ export const metadata: Metadata = {
   title: "HydraBlue — Smart Water Tracker",
   description:
     "A premium mobile water tracker with smart reminders and animated sloshing water.",
+  // Next 16 emits the `<link rel="manifest">` automatically from
+  // app/manifest.ts; including the app/apple-touch-icon hint here helps
+  // iOS Safari pick up the home-screen icon on "Add to Home Screen".
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "HydraBlue",
+  },
 };
 
 export const viewport: Viewport = {
